@@ -190,6 +190,32 @@ EOF
             find "${MOODLE_DATA_DIR}/sessions/" -name "sess_*" -delete
         fi
     fi
+    if [[ ! -d "$MOODLE_BASE_DIR/admin/tool/log/store/caliper" ]]; then
+        info "Installing Caliper plugin"
+        mkdir -p "$MOODLE_BASE_DIR/admin/tool/log/store/caliper"
+        unzip "$BITNAMI_ROOT_DIR/scripts/moodle/caliper.zip" -d "$MOODLE_BASE_DIR/admin/tool/log/store"
+        cat > "$MOODLE_BASE_DIR/local/defaults.php" << EOF
+<?php
+\$defaults['logstore_caliper']['endpoint'] = '${CALIPER_ENDPOINT}';
+\$defaults['logstore_caliper']['apikey'] = '${CALIPER_API_KEY}';
+\$defaults['logstore_caliper']['immediatemode'] = 1;
+EOF
+    chmod +x "$MOODLE_BASE_DIR/local/defaults.php"
+    
+    info "Upgrading Moodle Database to install plugin"
+    
+    db_type="$MOODLE_DATABASE_TYPE"
+    db_host="$MOODLE_DATABASE_HOST"
+    db_port="$MOODLE_DATABASE_PORT_NUMBER"
+    db_name="$MOODLE_DATABASE_NAME"
+    db_user="$MOODLE_DATABASE_USER"
+    db_pass="$MOODLE_DATABASE_PASSWORD"
+    local -a mysql_execute_args=("$MOODLE_DATABASE_HOST" "$MOODLE_DATABASE_PORT_NUMBER" "$MOODLE_DATABASE_NAME" "$MOODLE_DATABASE_USER" "$MOODLE_DATABASE_PASSWORD")
+    echo "UPDATE mdl_config_plugins SET value=CONCAT(value, ',logstore_caliper') WHERE plugin='tool_log' AND name='enabled_stores'" | mysql_remote_execute "${mysql_execute_args[@]}"
+
+    moodle_upgrade
+    fi
+    
 
     # Ensure Moodle cron jobs are created when running setup with a root user
     cron_cmd=("${PHP_BIN_DIR}/php" "${MOODLE_BASE_DIR}/admin/cli/cron.php")
@@ -310,7 +336,7 @@ moodle_upgrade() {
         "--allow-unstable"
     )
     am_i_root && moodle_upgrade_args=("gosu" "$WEB_SERVER_DAEMON_USER" "${moodle_upgrade_args[@]}")
-    debug_execute "${moodle_install_args[@]}"
+    debug_execute "${moodle_upgrade_args[@]}"
     popd >/dev/null
 }
 
