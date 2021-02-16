@@ -162,6 +162,8 @@ EOF
         fi
         # Change wwwroot configuration so the Moodle site can be accessible from anywhere
         moodle_configure_wwwroot
+        # Change debug mode to developer to allow automatic course generation
+        moodle_configure_developer_mode
 
         info "Persisting Moodle installation"
         persist_app "$app_name" "$MOODLE_DATA_TO_PERSIST"
@@ -200,20 +202,26 @@ EOF
 \$defaults['logstore_caliper']['apikey'] = '${CALIPER_API_KEY}';
 \$defaults['logstore_caliper']['immediatemode'] = 1;
 EOF
-    chmod +x "$MOODLE_BASE_DIR/local/defaults.php"
-    
-    info "Upgrading Moodle Database to install plugin"
-    
-    db_type="$MOODLE_DATABASE_TYPE"
-    db_host="$MOODLE_DATABASE_HOST"
-    db_port="$MOODLE_DATABASE_PORT_NUMBER"
-    db_name="$MOODLE_DATABASE_NAME"
-    db_user="$MOODLE_DATABASE_USER"
-    db_pass="$MOODLE_DATABASE_PASSWORD"
-    local -a mysql_execute_args=("$MOODLE_DATABASE_HOST" "$MOODLE_DATABASE_PORT_NUMBER" "$MOODLE_DATABASE_NAME" "$MOODLE_DATABASE_USER" "$MOODLE_DATABASE_PASSWORD")
-    echo "UPDATE mdl_config_plugins SET value=CONCAT(value, ',logstore_caliper') WHERE plugin='tool_log' AND name='enabled_stores'" | mysql_remote_execute "${mysql_execute_args[@]}"
+        
+        chmod +x "$MOODLE_BASE_DIR/local/defaults.php"
+        
+        info "Upgrading Moodle Database to install plugin"
+        
+        db_type="$MOODLE_DATABASE_TYPE"
+        db_host="$MOODLE_DATABASE_HOST"
+        db_port="$MOODLE_DATABASE_PORT_NUMBER"
+        db_name="$MOODLE_DATABASE_NAME"
+        db_user="$MOODLE_DATABASE_USER"
+        db_pass="$MOODLE_DATABASE_PASSWORD"
+        local -a mysql_execute_args=("$MOODLE_DATABASE_HOST" "$MOODLE_DATABASE_PORT_NUMBER" "$MOODLE_DATABASE_NAME" "$MOODLE_DATABASE_USER" "$MOODLE_DATABASE_PASSWORD")
+        echo "UPDATE mdl_config_plugins SET value=CONCAT(value, ',logstore_caliper') WHERE plugin='tool_log' AND name='enabled_stores';" | mysql_remote_execute "${mysql_execute_args[@]}"
 
-    moodle_upgrade
+        moodle_upgrade
+
+        info "Generating default course and student"
+        php "$MOODLE_BASE_DIR/admin/tool/generator/cli/maketestcourse.php" --shortname=COMP0101 --fullname=COMP0101 --size=XS --fixeddataset
+        php "$MOODLE_BASE_DIR/admin/tool/uploaduser/cli/uploaduser.php" --file="$BITNAMI_ROOT_DIR/scripts/moodle/users.csv"
+
     fi
     
 
@@ -363,4 +371,8 @@ if (isset(\$_SERVER['HTTPS']) \&\& \$_SERVER['HTTPS'] == 'on') {\\
   \$CFG->wwwroot   = 'http://' . \$_SERVER['HTTP_HOST'];\\
 }"
     replace_in_file "$MOODLE_CONF_FILE" "\\\$CFG->wwwroot\s*=.*" "$conf_to_replace"
+}
+
+moodle_configure_developer_mode() {
+    printf "\n\n\$CFG->debug = (E_ALL | E_STRICT);\n\$CFG->passwordpolicy = 0;\n" >> "$MOODLE_CONF_FILE" 
 }
